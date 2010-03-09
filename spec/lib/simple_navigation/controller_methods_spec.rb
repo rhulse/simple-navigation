@@ -10,9 +10,18 @@ describe SimpleNavigation::ControllerMethods do
 
   before(:each) do
     stub_loading_config
-    class ApplicationController < ActionController::Base
+    class TestController
+      class << self
+        def helper_method(*args)
+          @helper_methods = args
+        end
+        def before_filter(*args)
+          @before_filters = args
+        end
+      end
     end
-    @controller = ApplicationController.new
+    TestController.send(:include, SimpleNavigation::ControllerMethods)
+    @controller = TestController.new
   end
   
   describe 'when being included' do
@@ -22,10 +31,8 @@ describe SimpleNavigation::ControllerMethods do
     it "should include the InstanceMethods" do
       @controller.should respond_to(:current_navigation)
     end
-    it "should install the Helpers Module" do
-      [:render_navigation, :render_primary_navigation, :render_sub_navigation].each do |m|
-        @controller.master_helper_module.instance_methods.should include(m.to_s)
-      end
+    it "should install the helper methods" do
+      @controller.class.instance_variable_get(:@helper_methods).should == [:render_navigation, :render_primary_navigation, :render_sub_navigation]
     end
   end
   
@@ -39,17 +46,17 @@ describe SimpleNavigation::ControllerMethods do
         end
       end
       
-      it "should not have an instance-method 'set_navigation if navigation-method has not been called" do
-        @controller.respond_to?(:set_navigation).should be_false
+      it "should not have an instance-method 'sn_set_navigation' if navigation-method has not been called" do
+        @controller.respond_to?(:sn_set_navigation).should be_false
       end
-      it 'should create an instance-method "set_navigation" when being called' do
+      it 'should create an instance-method "sn_set_navigation" when being called' do
         call_navigation(:key)
-        @controller.respond_to?(:set_navigation).should be_true
+        @controller.respond_to?(:sn_set_navigation).should be_true
       end
       it 'the created method should call current_navigation with the specified keys' do
         call_navigation(:primary, :secondary)
         @controller.should_receive(:current_navigation).with(:primary, :secondary)
-        @controller.set_navigation
+        @controller.sn_set_navigation
       end
     end
     
@@ -58,17 +65,13 @@ describe SimpleNavigation::ControllerMethods do
   describe 'instance_methods' do
     
     describe 'current_navigation' do
-      it "should set the current_primary_navigation as specified" do
+      it "should set the sn_current_navigation_args as specified" do
         @controller.current_navigation(:first)
-        @controller.instance_variable_get(:@current_primary_navigation).should == :first
+        @controller.instance_variable_get(:@sn_current_navigation_args).should == [:first]
       end
-      it "should set the current_secondary_navigation as specified" do
+      it "should set the sn_current_navigation_args as specified" do
         @controller.current_navigation(:first, :second)
-        @controller.instance_variable_get(:@current_secondary_navigation).should == :second
-      end
-      it "should set the current_secondary_navigation to nil if no secondary is specified" do
-        @controller.current_navigation(:first)
-        @controller.instance_variable_get(:@current_secondary_navigation).should be_nil
+        @controller.instance_variable_get(:@sn_current_navigation_args).should == [:first, :second]
       end
     end
     

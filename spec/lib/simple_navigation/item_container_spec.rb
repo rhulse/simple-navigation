@@ -15,6 +15,160 @@ describe SimpleNavigation::ItemContainer do
     end
   end
 
+  describe 'items=' do
+    before(:each) do
+      @item = stub(:item)
+      @items = [@item]
+      @item_adapter = stub(:item_adapter, :null_object => true)
+      SimpleNavigation::ItemAdapter.stub(:new => @item_adapter)
+      @item_container.stub!(:should_add_item? => true)
+    end
+    it "should wrap each item in an ItemAdapter" do
+      SimpleNavigation::ItemAdapter.should_receive(:new)
+      @item_container.items = @items
+    end
+    context 'item should be added' do
+      before(:each) do
+        @item_container.stub!(:should_add_item? => true)
+        @simple_navigation_item = stub(:simple_navigation_item)
+        @item_adapter.stub!(:to_simple_navigation_item => @simple_navigation_item)
+      end
+      it "should convert the item to a SimpleNavigation::Item" do
+        @item_adapter.should_receive(:to_simple_navigation_item).with(@item_container)
+        @item_container.items = @items
+      end
+      it "should add the item to the items-collection" do
+        @item_container.items.should_receive(:<<).with(@simple_navigation_item)
+        @item_container.items = @items
+      end
+    end
+    context 'item should not be added' do
+      before(:each) do
+        @item_container.stub!(:should_add_item? => false)
+      end
+      it "should not convert the item to a SimpleNavigation::Item" do
+        @item_adapter.should_not_receive(:to_simple_navigation_item)
+        @item_container.items = @items
+      end
+      it "should not add the item to the items-collection" do
+        @item_container.items.should_not_receive(:<<)
+        @item_container.items = @items
+      end
+    end
+  end
+
+  describe 'selected?' do
+    before(:each) do
+      @item_1 = stub(:item, :selected? => false)
+      @item_2 = stub(:item, :selected? => false)
+      @item_container.instance_variable_set(:@items, [@item_1, @item_2])
+    end
+    it "should return nil if no item is selected" do
+      @item_container.should_not be_selected
+    end
+    it "should return true if one item is selected" do
+      @item_1.stub!(:selected? => true)
+      @item_container.should be_selected
+    end
+  end
+
+  describe 'selected_item' do
+    before(:each) do
+      @item_1 = stub(:item, :selected? => false)
+      @item_2 = stub(:item, :selected? => false)
+      @item_container.instance_variable_set(:@items, [@item_1, @item_2])
+    end
+    context 'navigation explicitely set' do
+      before(:each) do
+        @item_container.stub!(:[] => @item_1)
+      end
+      it "should return the explicitely selected item" do
+        @item_container.selected_item.should == @item_1
+      end
+    end
+    context 'navigation not explicitely set' do
+      before(:each) do
+        @item_container.stub!(:[] => nil)
+      end
+      context 'no item selected' do
+        it "should return nil" do
+          @item_container.selected_item.should be_nil
+        end
+      end
+      context 'one item selected' do
+        before(:each) do
+          @item_1.stub!(:selected? => true)
+        end
+        it "should return the selected item" do
+          @item_container.selected_item.should == @item_1
+        end
+      end
+    end
+  end
+
+  describe 'selected_sub_navigation?' do
+    context 'with an item selected' do
+      before(:each) do
+        @selected_item = stub(:selected_item)
+        @item_container.stub!(:selected_item => @selected_item)
+      end
+      context 'selected item has sub_navigation' do
+        before(:each) do
+          @sub_navigation = stub(:sub_navigation)
+          @selected_item.stub!(:sub_navigation => @sub_navigation)
+        end
+        it {@item_container.send(:selected_sub_navigation?).should be_true}
+      end
+      context 'selected item does not have sub_navigation' do
+        before(:each) do
+          @selected_item.stub!(:sub_navigation => nil)
+        end
+        it {@item_container.send(:selected_sub_navigation?).should be_false}
+      end
+    end
+    context 'without an item selected' do
+      before(:each) do
+        @item_container.stub!(:selected_item => nil)
+      end
+      it {@item_container.send(:selected_sub_navigation?).should be_false}
+    end
+
+  end
+
+  describe 'active_item_container_for' do
+    context "the desired level is the same as the container's" do
+      it {@item_container.active_item_container_for(1).should == @item_container}
+    end
+    context "the desired level is different than the container's" do
+      context 'with no selected subnavigation' do
+        before(:each) do
+          @item_container.stub!(:selected_sub_navigation? => false)
+        end
+        it {@item_container.active_item_container_for(2).should be_nil}
+      end
+      context 'with selected subnavigation' do
+        before(:each) do
+          @item_container.stub!(:selected_sub_navigation? => true)
+          @sub_nav = stub(:sub_nav)
+          @selected_item = stub(:selected_item)
+          @item_container.stub!(:selected_item => @selected_item)
+          @selected_item.stub!(:sub_navigation => @sub_nav)
+        end
+        it "should call recursively on the sub_navigation" do
+          @sub_nav.should_receive(:active_item_container_for).with(2)
+          @item_container.active_item_container_for(2)
+        end
+      end
+    end
+  end
+
+  describe 'current_explicit_navigation' do
+    it "should call SimpleNavigation.current_navigation with the container's level" do
+      SimpleNavigation.should_receive(:current_navigation_for).with(1)
+      @item_container.current_explicit_navigation
+    end
+  end
+
   describe 'item' do
     
     context 'unconditional item' do
@@ -36,7 +190,7 @@ describe SimpleNavigation::ItemContainer do
           end
         end
         it "should create a new Navigation-Item with the given params and the specified block" do
-          SimpleNavigation::Item.should_receive(:new).with('key', 'name', 'url', @options, @proc)
+          SimpleNavigation::Item.should_receive(:new).with(@item_container, 'key', 'name', 'url', @options, nil, &@proc)
           @item_container.item('key', 'name', 'url', @options, &@proc)
         end
         it "should add the created item to the list of items" do
@@ -47,7 +201,7 @@ describe SimpleNavigation::ItemContainer do
     
       context 'no block given' do
         it "should create a new Navigation_item with the given params and nil as sub_navi" do
-          SimpleNavigation::Item.should_receive(:new).with('key', 'name', 'url', @options, nil)
+          SimpleNavigation::Item.should_receive(:new).with(@item_container, 'key', 'name', 'url', @options, nil)
           @item_container.item('key', 'name', 'url', @options)
         end
         it "should add the created item to the list of items" do
@@ -91,6 +245,12 @@ describe SimpleNavigation::ItemContainer do
           end
         end
         
+        context 'if is not a proc or method' do
+          it "should raise an error" do
+            lambda {@item_container.item('key', 'name', 'url', {:if => 'text'})}.should raise_error
+          end
+        end
+
         context '"unless" given' do
           
           before(:each) do
@@ -155,20 +315,40 @@ describe SimpleNavigation::ItemContainer do
       @item_container.stub!(:renderer).and_return(@renderer)
       @items = stub(:items)
       @item_container.stub!(:items).and_return(@items)
+      @options = stub(:options)
     end
-    it "should instatiate a renderer with the current_primary and current_secondary" do
-      @renderer.should_receive(:new).with(:current_navigation, nil)
-      @item_container.render(:current_navigation)
+    it "should instatiate a renderer" do
+      @renderer.should_receive(:new).with(@options)
+      @item_container.render(@options)
     end
     it "should call render on the renderer and pass self" do
-      @renderer_instance.should_receive(:render).with(@item_container, anything)
-      @item_container.render(:current_navigation)
-    end
-    it "should call render on the renderer and pass the include_sub_navigation option" do
-      @renderer_instance.should_receive(:render).with(anything, true)
-      @item_container.render(:current_navigation, true, :current_sub_navigation)
+      @renderer_instance.should_receive(:render).with(@item_container)
+      @item_container.render
     end
     
   end
   
+  describe 'level_for_item' do
+    before(:each) do
+      @item_container.item(:p1, 'p1', 'p1')
+      @item_container.item(:p2, 'p2', 'p2') do |p2|
+        p2.item(:s1, 's1', 's1')
+        p2.item(:s2, 's2', 's2') do |s2|
+          s2.item(:ss1, 'ss1', 'ss1')
+          s2.item(:ss2, 'ss2', 'ss2')
+        end
+        p2.item(:s3, 's3', 's3')
+      end
+      @item_container.item(:p3, 'p3', 'p3')
+    end
+    it {@item_container.level_for_item(:p1).should == 1}
+    it {@item_container.level_for_item(:p3).should == 1}
+    it {@item_container.level_for_item(:s1).should == 2}
+    it {@item_container.level_for_item(:ss1).should == 3}
+    it {@item_container.level_for_item(:x).should be_nil}
+
+
+
+  end
+
 end

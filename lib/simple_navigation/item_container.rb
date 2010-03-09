@@ -1,14 +1,16 @@
 module SimpleNavigation
   
-  # Holds the Items for a navigation 'level' (either the primary_navigation or a sub_navigation).
+  # Holds the Items for a navigation 'level'.
   class ItemContainer
     
-    attr_reader :items
-    attr_accessor :renderer, :dom_id, :dom_class
+    attr_reader :items, :level
+    attr_accessor :renderer, :dom_id, :dom_class, :auto_highlight
     
-    def initialize #:nodoc:
+    def initialize(level=1) #:nodoc:
+      @level = level
       @items = []
-      @renderer = Configuration.instance.renderer
+      @renderer = SimpleNavigation.config.renderer
+      @auto_highlight = true
     end
     
     # Creates a new navigation item. 
@@ -30,23 +32,79 @@ module SimpleNavigation
     #
     # The <tt>block</tt> - if specified - will hold the item's sub_navigation.
     def item(key, name, url, options={}, &block)
-      (@items << Item.new(key, name, url, options, block)) if should_add_item?(options)
+      (@items << SimpleNavigation::Item.new(self, key, name, url, options, nil, &block)) if should_add_item?(options)
+    end
+
+    def items=(items)
+      items.each do |item|
+        item = SimpleNavigation::ItemAdapter.new(item)
+        (@items << item.to_simple_navigation_item(self)) if should_add_item?(item.options)
+      end
     end
 
     # Returns the Item with the specified key, nil otherwise.
+    #
     def [](navi_key)
       items.find {|i| i.key == navi_key}
+    end
+
+    # Returns the level of the item specified by navi_key.
+    # Recursively works its way down the item's sub_navigations if the desired item is not found directly in this container's items.
+    # Returns nil item cannot be found.
+    #
+    def level_for_item(navi_key)
+      my_item = self[navi_key]
+      return self.level if my_item
+      items.each do |i|
+        if i.sub_navigation
+          level = i.sub_navigation.level_for_item(navi_key)
+          return level unless level.nil?
+        end
+      end
+      return nil
     end
   
     # Renders the items in this ItemContainer using the configured renderer.
     #
-    # Set <tt>include_sub_navigation</tt> to true if you want to nest the sub_navigation into the active primary_navigation
-    def render(current_navigation, include_sub_navigation=false, current_sub_navigation=nil)
-      self.renderer.new(current_navigation, current_sub_navigation).render(self, include_sub_navigation)
+    # The options are the same as in the view's render_navigation call (they get passed on)
+    def render(options={})
+      self.renderer.new(options).render(self)
+    end
+
+    # Returns true if any of this container's items is selected.
+    #
+    def selected?
+      items.any? {|i| i.selected?}
+    end
+
+    # Returns the currently selected item, nil if no item is selected.
+    #
+    def selected_item
+      self[current_explicit_navigation] || items.find {|i| i.selected?}
+    end
+
+    # Returns the current navigation that has been explicitely defined in the controller for this container's level.
+    # Returns nil if no explicit current navigation has been set.
+    #
+    def current_explicit_navigation
+      SimpleNavigation.current_navigation_for(level)
+    end
+
+    # Returns the active item_container for the specified level
+    # (recursively looks up items in selected sub_navigation if level is deeper than this container's level).
+    #
+    def active_item_container_for(desired_level)
+      return self if self.level == desired_level
+      return nil unless selected_sub_navigation?
+      return selected_item.sub_navigation.active_item_container_for(desired_level)
     end
 
     private
     
+    def selected_sub_navigation?
+      !!(selected_item && selected_item.sub_navigation)
+    end
+
     # partially borrowed from ActionSupport::Callbacks
     def should_add_item?(options) #:nodoc:
       [options.delete(:if)].flatten.compact.all? { |m| evaluate_method(m) } &&
@@ -62,7 +120,6 @@ module SimpleNavigation
           raise ArgumentError, ":if or :unless must be procs or lambdas"
       end
     end
-
     
   end
   

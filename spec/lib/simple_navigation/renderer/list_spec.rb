@@ -7,35 +7,51 @@ describe SimpleNavigation::Renderer::List do
     
     def sub_items
       [
-        SimpleNavigation::Item.new(:subnav1, 'subnav1', 'subnav1_url', {}, nil),
-        SimpleNavigation::Item.new(:subnav2, 'subnav2', 'subnav2_url', {}, nil)
+        [:subnav1, 'subnav1', 'subnav1_url', {}],
+        [:subnav2, 'subnav2', 'subnav2_url', {}]
       ]
     end
     
     def primary_items
-      @item1 = SimpleNavigation::Item.new(:users, 'users', 'first_url', {:id => 'my_id'}, nil)
-      @item2 = SimpleNavigation::Item.new(:invoices, 'invoices', 'second_url', {}, nil)
-      @item3 = SimpleNavigation::Item.new(:accounts, 'accounts', 'third_url', {:style => 'float:right'}, nil)
-      @item2.instance_variable_set(:@sub_navigation, item_container(sub_items))
-      [@item1, @item2, @item3]
+      [
+        [:users, 'users', 'first_url', {:id => 'my_id'}],
+        [:invoices, 'invoices', 'second_url', {}],
+        [:accounts, 'accounts', 'third_url', {:style => 'float:right'}]
+      ]
     end
 
-    def item_container(items)
-      container = SimpleNavigation::ItemContainer.new
+    def primary_container
+      container = SimpleNavigation::ItemContainer.new(0)
       container.dom_id = 'nav_dom_id'
       container.dom_class = 'nav_dom_class'
+      @items = primary_items.map {|params| SimpleNavigation::Item.new(container, *params)}
+      @items.each {|i| i.stub!(:selected? => false)}
+      container.instance_variable_set(:@items, @items)
+      primary_item(:invoices) {|item| item.instance_variable_set(:@sub_navigation, subnav_container)}
+      container
+    end
+
+    def primary_item(key)
+      yield @items.find {|i| i.key == key}
+    end
+
+    def select_item(key)
+      primary_item(key) {|item| item.stub!(:selected? => true)}
+    end
+
+    def subnav_container
+      container = SimpleNavigation::ItemContainer.new(1)
+      items = sub_items.map {|params| SimpleNavigation::Item.new(container, *params)}
+      items.each {|i| i.stub!(:selected? => false)}
       container.instance_variable_set(:@items, items)
       container
     end
 
-    def primary_navigation
-      @item_container = item_container(primary_items)
-      @item_container
-    end
-
-    def render(current_navigation=nil, include_subnav=false)
-      @renderer = SimpleNavigation::Renderer::List.new(current_navigation)
-      HTML::Document.new(@renderer.render(primary_navigation, include_subnav)).root
+    def render(current_nav=nil, options={:level => :all})
+      primary_navigation = primary_container
+      select_item(current_nav) if current_nav
+      @renderer = SimpleNavigation::Renderer::List.new(options)
+      HTML::Document.new(@renderer.render(primary_navigation)).root
     end
       
     it "should render a ul-tag around the items" do
@@ -87,31 +103,25 @@ describe SimpleNavigation::Renderer::List do
     
     context 'nested sub_navigation' do
       it "should nest the current_primary's subnavigation inside the selected li-element" do
-        HTML::Selector.new('li.selected ul li').select(render(:invoices, true)).should have(2).entries
+        HTML::Selector.new('li.selected ul li').select(render(:invoices)).should have(2).entries
       end
       it "should be possible to identify sub items using an html selector (using ids)" do
-        HTML::Selector.new('#invoices #subnav1').select(render(:invoices, true)).should have(1).entries
+        HTML::Selector.new('#invoices #subnav1').select(render(:invoices)).should have(1).entries
       end
-      context 'render_all_levels = false' do
-        before(:each) do
-          SimpleNavigation.config.render_all_levels = false
-        end
+      context 'expand_all => false' do
         it "should not render the invoices submenu if the user-primary is active" do
-          HTML::Selector.new('#invoices #subnav1').select(render(:users, true)).should be_empty
-          HTML::Selector.new('#invoices #subnav2').select(render(:users, true)).should be_empty
+          HTML::Selector.new('#invoices #subnav1').select(render(:users, :level => :all, :expand_all => false)).should be_empty
+          HTML::Selector.new('#invoices #subnav2').select(render(:users, :level => :all, :expand_all => false)).should be_empty
         end
       end
       
-      context 'render_all_levels = true' do
-        before(:each) do
-          SimpleNavigation.config.render_all_levels = true
-        end
+      context 'expand_all => true' do
         it "should render the invoices submenu even if the user-primary is active" do
-          HTML::Selector.new('#invoices #subnav1').select(render(:users, true)).should have(1).entry
-          HTML::Selector.new('#invoices #subnav2').select(render(:users, true)).should have(1).entry
+          HTML::Selector.new('#invoices #subnav1').select(render(:users, :level => :all, :expand_all => true)).should have(1).entry
+          HTML::Selector.new('#invoices #subnav2').select(render(:users, :level => :all, :expand_all => true)).should have(1).entry
         end
       end
-      
+          
     end
     
   end

@@ -6,15 +6,19 @@ SimpleNavigation::Configuration.run do |navigation|
   
   # Specify the class that will be applied to active navigation items. Defaults to 'selected'
   # navigation.selected_class = 'your_selected_class'
-  
-  # Normally only the current sub menu is renderedwhen render_navigation is called
-  # setting this to true render all submenus which is useful for javascript
-  # driven hovering menus like the jquery superfish plugin
-  # navigation.render_all_levels = true
-  
-  # Item keys are normally added to list items.
-  # this setting turns that off
+    
+  # Item keys are normally added to list items as id.
+  # This setting turns that off
   # navigation.autogenerate_item_ids = false
+  
+  # You can override the default logic that is used to autogenerate the item ids.
+  # To do this, define a Proc which takes the key of the current item as argument.
+  # The example below would add a prefix to each key.
+  # navigation.id_generator = Proc.new {|key| "my-prefix-#{key}"}
+
+  # The auto highlight feature is turned on by default.
+  # This turns it off globally (for the whole plugin)
+  # navigation.auto_highlight = false
 
   # Define the primary navigation
   navigation.items do |primary|
@@ -42,6 +46,9 @@ SimpleNavigation::Configuration.run do |navigation|
     # works for all levels of the menu
     # primary.dom_id = 'menu-id'
     # primary.dom_class = 'menu-class'
+    
+    # You can turn off auto highlighting for a specific level
+    # primary.auto_highlight = false
   
   end
   
